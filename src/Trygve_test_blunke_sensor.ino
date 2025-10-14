@@ -1,7 +1,7 @@
 #include <Arduino_LSM6DS3.h>
 
 const float accelThreshold = 0.5;   // Lower threshold for subtle eyebrow movement
-const float gyroThreshold = 30.0;        // Lower threshold for subtle rotation
+const float gyroThreshold = 300.0;        // Lower threshold for subtle rotation
 const int window = 1000;
 const int debounceTime = 50;
 
