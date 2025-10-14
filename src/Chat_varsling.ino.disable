@@ -1,0 +1,135 @@
+#include <Arduino_LSM6DS3.h>
+#include <WiFiNINA.h>
+
+const char* ssid = "DITT_WIFI_NAVN";
+const char* password = "DITT_PASSORD";
+
+WiFiServer server(80);
+
+const int alarmPin = 5;
+const float threshold = 0.4;
+const unsigned long window = 2000;
+
+unsigned long blinkTimes[10];
+int blinkCount = 0;
+bool alarmOn = true;
+
+void setup() {
+  Serial.begin(9600);
+  while (!Serial);
+
+  pinMode(alarmPin, OUTPUT);
+  digitalWrite(alarmPin, HIGH); // Start med alarm på
+
+  if (!IMU.begin()) {
+    Serial.println("Feil: kunne ikke starte IMU!");
+    while (1);
+  }
+
+  Serial.print("Kobler til Wi-Fi: ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\n✅ Wi-Fi tilkoblet!");
+  Serial.print("📡 IP-adresse: ");
+  Serial.println(WiFi.localIP());
+  Serial.println("Åpne IP-adressen i nettleseren for status og kontroll.");
+
+  server.begin();
+}
+
+void loop() {
+  float ax, ay, az;
+
+  if (IMU.accelerationAvailable()) {
+    IMU.readAcceleration(ax, ay, az);
+    float magnitude = sqrt(ax * ax + ay * ay + az * az);
+    static float lastMag = 1.0;
+    float delta = fabs(magnitude - lastMag);
+    lastMag = magnitude;
+
+    if (delta > threshold) {
+      unsigned long now = millis();
+      blinkTimes[blinkCount % 10] = now;
+      blinkCount++;
+      Serial.println("💡 Registrert bevegelse (blunk)");
+    }
+
+    unsigned long now = millis();
+    int validCount = 0;
+    for (int i = 0; i < blinkCount && i < 10; i++) {
+      if (now - blinkTimes[i] <= window) validCount++;
+    }
+
+    if (alarmOn && validCount >= 4) {
+      Serial.println("🚨 Fire blunk registrert – alarm AV!");
+      alarmOn = false;
+      digitalWrite(alarmPin, LOW);
+    }
+  }
+
+  WiFiClient client = server.available();
+  if (client) {
+    String request = client.readStringUntil('\r');
+    client.flush();
+
+    // Hvis bruker trykker på "reset"-knappen
+    if (request.indexOf("/reset") != -1) {
+      alarmOn = true;
+      digitalWrite(alarmPin, HIGH);
+      Serial.println("🔔 Alarm reaktivert via nettsiden");
+    }
+
+    // HTML med helse-tema og bjelleikon
+    String html = "<!DOCTYPE html><html><head><meta charset='utf-8'>";
+    html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+    html += "<meta http-equiv='refresh' content='2'>";
+    html += "<title>Helsealarm</title>";
+    html += "<style>";
+    html += "body{font-family:sans-serif;text-align:center;background:#f4f9f4;margin-top:60px;}";
+    html += ".bell{font-size:100px;position:relative;color:";
+    html += alarmOn ? "#e74c3c" : "#2ecc71";
+    html += ";}";
+    html += ".alert{position:absolute;top:10px;right:40%;background:red;color:white;";
+    html += "border-radius:50%;width:30px;height:30px;line-height:30px;font-weight:bold;}";
+    html += "button{margin-top:40px;padding:15px 30px;font-size:18px;border:none;border-radius:10px;";
+    html += "background:#4CAF50;color:white;cursor:pointer;}";
+    html += "button:hover{background:#45a049;}";
+    html += "</style></head><body>";
+
+    html += "<h1>🧠 Blunkbasert helsealarm</h1>";
+    html += "<div class='bell'>🔔";
+    if (!alarmOn) html += "<div class='alert'>!</div>";
+    html += "</div>";
+
+    if (alarmOn) {
+      html += "<h2 style='color:#e74c3c'>🚨 Alarm er PÅ</h2>";
+    } else {
+      html += "<h2 style='color:#2ecc71'>✅ Alarm er AV</h2>";
+    }
+
+    html += "<form action='/reset' method='GET'>";
+    html += "<button type='submit'>Slå på alarmen igjen</button>";
+    html += "</form>";
+
+    html += "<p style='margin-top:40px;color:#555;'>Hold deg trygg — systemet overvåker blunkmønstre for bevegelses- eller helsetilstand.</p>";
+
+    html += "</body></html>";
+
+    // Send til nettleser
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: text/html");
+    client.println("Connection: close");
+    client.println();
+    client.println(html);
+
+    client.stop();
+  }
+
+  delay(50);
+}

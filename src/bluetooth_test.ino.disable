@@ -1,0 +1,210 @@
+/*
+  BLE_test.ino
+  Minimal BLE advertiser for Nano 33 IoT to verify radio and advertisement.
+*/
+
+#include <ArduinoBLE.h>
+#include <Arduino_LSM6DS3.h>
+
+const float accelThreshold = 0.4;   // Lower threshold for subtle eyebrow movement
+const float gyroThreshold = 500.0;        // Lower threshold for subtle rotation
+const int window = 1000;
+const int debounceTime = 50;
+
+unsigned long blinkTimes[10];
+int blinkCount = 0;
+bool alarmOn = true;
+unsigned long lastBlinkTime = 0;
+
+// Low-pass filter for gravity removal
+float ax_filtered = 0, ay_filtered = 0, az_filtered = 0;
+const float alpha = 0.8; // Filter coefficient (higher = more filtering)
+
+// Previous acceleration for jerk calculation
+float ax_prev = 0, ay_prev = 0, az_prev = 0;
+
+// Exposed magnitudes for Bluetooth status
+float accelMagnitude = 0.0;
+float gyroMagnitude = 0.0;
+
+// BLE service and characteristic for status/notifications
+BLEService blinkService("12345678-1234-5678-1234-56789abcdef0");
+BLECharacteristic statusChar("12345678-1234-5678-1234-56789abcdef1", BLERead | BLENotify, 128);
+
+// Track whether BLE successfully initialized
+bool bleAvailable = false;
+// LED status for visual debugging
+unsigned long ledToggleLast = 0;
+bool ledState = false;
+
+
+void setup() {
+  Serial.begin(9600);
+  // Wait briefly for Serial only for convenience; don't block indefinitely
+  unsigned long serialStart = millis();
+  while (!Serial && millis() - serialStart < 2000) {
+    delay(10);
+  }
+  Serial.println("BLE diagnostic starting...");
+  Serial.flush();
+
+  // Setup built-in LED for progress/debugging
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
+
+  Serial.println("calling BLE.begin()...");
+  Serial.flush();
+  // Try initializing BLE with a short retry window to avoid hanging
+  const unsigned long bleInitTimeout = 3000; // ms
+  unsigned long bleStart = millis();
+  while (millis() - bleStart < bleInitTimeout) {
+    if (BLE.begin()) {
+      bleAvailable = true;
+      break;
+    }
+    Serial.println("BLE.begin() attempt failed, retrying...");
+    delay(300);
+  }
+  if (!bleAvailable) {
+    Serial.println("BLE.begin() failed — radio not available or init failed (giving up)");
+  } else {
+    Serial.println("BLE.begin() succeeded");
+  }
+
+  if (bleAvailable) {
+    digitalWrite(LED_BUILTIN, HIGH); // steady on when BLE is up
+  } else {
+    digitalWrite(LED_BUILTIN, LOW); // off when BLE not available
+  }
+
+  // Initialize filters
+  if (IMU.accelerationAvailable()) {
+    IMU.readAcceleration(ax_filtered, ay_filtered, az_filtered);
+    ax_prev = ax_filtered;
+    ay_prev = ay_filtered;
+    az_prev = az_filtered;
+  }
+
+  // Initialize blink timestamp buffer to a known state
+  for (int i = 0; i < 10; i++) {
+    blinkTimes[i] = 0;
+  }
+
+  // Setup BLE service/characteristic if BLE is available
+  if (bleAvailable) {
+    BLE.setLocalName("BlinkSensorTest");
+    // Add characteristic to the service before registering the service
+    blinkService.addCharacteristic(statusChar);
+    statusChar.setValue("ready");
+    BLE.addService(blinkService);
+    BLE.setAdvertisedService(blinkService);
+    // Start advertising (will advertise local name and service)
+    BLE.advertise();
+    Serial.println("BLE initialized, service added and advertising as 'BlinkSensorTest'.");
+  } else {
+    Serial.println("Skipping BLE service setup because BLE.init failed.");
+  }
+}
+
+void loop() {
+  // Service BLE events (only if BLE initialized)
+  if (bleAvailable) BLE.poll();
+  static unsigned long last = 0;
+  unsigned long now = millis();
+  if (now - last > 2000) {
+    last = now;
+    if (bleAvailable && BLE.connected()) {
+      Serial.println("BLE: connected");
+    } else {
+      Serial.println("BLE: advertising (not connected)");
+    }
+  }
+
+  float ax, ay, az, gx, gy, gz;
+  static unsigned long lastStatusSend = 0;
+  const unsigned long statusInterval = 500; // ms
+
+  // Read both accelerometer and gyroscope
+  if (IMU.accelerationAvailable() && IMU.gyroscopeAvailable()) {
+    IMU.readAcceleration(ax, ay, az);
+    IMU.readGyroscope(gx, gy, gz);
+
+    // Low-pass filter to estimate gravity component
+    ax_filtered = alpha * ax_filtered + (1 - alpha) * ax;
+    ay_filtered = alpha * ay_filtered + (1 - alpha) * ay;
+    az_filtered = alpha * az_filtered + (1 - alpha) * az;
+
+    // High-pass filter: subtract gravity to get dynamic acceleration
+    float ax_dynamic = ax - ax_filtered;
+    float ay_dynamic = ay - ay_filtered;
+    float az_dynamic = az - az_filtered;
+
+    // Calculate acceleration (rate of change of acceleration)
+    float accel_x = fabs(ax_dynamic - ax_prev);
+    float accel_y = fabs(ay_dynamic - ay_prev);
+    float accel_z = fabs(az_dynamic - az_prev);
+  accelMagnitude = sqrt(accel_x * accel_x + accel_y * accel_y + accel_z * accel_z);
+
+    // Calculate gyroscope magnitude
+  gyroMagnitude = sqrt(gx * gx + gy * gy + gz * gz);
+
+    // Store current acceleration for next iteration
+    ax_prev = ax_dynamic;
+    ay_prev = ay_dynamic;
+    az_prev = az_dynamic;
+
+    // Detect blink using EITHER high acceleration OR high rotation
+    if (accelMagnitude > accelThreshold || gyroMagnitude > gyroThreshold) {
+      unsigned long now = millis();
+      
+      // Debounce: only register if enough time has passed since last blink
+      if (now - lastBlinkTime > debounceTime) {
+        blinkTimes[blinkCount % 10] = now;
+        blinkCount++;
+        lastBlinkTime = now;
+        
+        Serial.print("💡 Blunk! (accel: ");
+        Serial.print(accelMagnitude);
+        Serial.print(" g/s, gyro: ");
+        Serial.print(gyroMagnitude);
+        Serial.println(" °/s)");
+
+        // Also notify connected BLE central about the blink event
+        if (bleAvailable && BLE.connected()) {
+          char buf[128];
+          int n = snprintf(buf, sizeof(buf), "BLINK! accel=%.3f g/s, gyro=%.1f deg/s", accelMagnitude, gyroMagnitude);
+          if (n > 0) statusChar.writeValue((const unsigned char*)buf, strlen(buf));
+        }
+      }
+    }
+
+    // Count valid blinks within the time window using the circular buffer
+    unsigned long now = millis();
+    int validCount = 0;
+    int entries = blinkCount < 10 ? blinkCount : 10;
+    for (int i = 0; i < entries; i++) {
+      // Walk backwards from the most recent entry
+      int idx = (blinkCount - 1 - i) % 10;
+      if (idx < 0) idx += 10;
+      unsigned long t = blinkTimes[idx];
+      if (t != 0 && now - t <= window) {
+        validCount++;
+      }
+    }
+
+    // Check if alarm should be turned off
+    if (alarmOn && validCount >= 4) {
+      Serial.println("🚨 FIRE BLUNK REGISTRERT PÅ 1 SEKUND – ALARM AV!");
+      Serial.println("========================================");
+      alarmOn = false;
+    }
+    // Periodically send status (accel/gyro/blink count) over BLE when connected
+    unsigned long nowSend = millis();
+    if (bleAvailable && BLE.connected() && (nowSend - lastStatusSend >= statusInterval)) {
+      lastStatusSend = nowSend;
+      char buf[128];
+      int n = snprintf(buf, sizeof(buf), "status accel=%.3f gyro=%.1f validBlinkCnt=%d alarmOn=%d", accelMagnitude, gyroMagnitude, validCount, alarmOn ? 1 : 0);
+      if (n > 0) statusChar.writeValue((const unsigned char*)buf, strlen(buf));
+    }
+  delay(10);
+}}
