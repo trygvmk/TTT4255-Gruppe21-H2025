@@ -16,7 +16,7 @@ h1 {
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(4, 1fr); /* Max 4 cards per row */
   gap: 1rem;
   margin-top: 1rem;
 }
@@ -28,6 +28,7 @@ h1 {
   transition: border-left 0.3s ease, transform 0.3s ease;
   border-left: 8px solid #bbb;
   position: relative;
+  min-width: 0;
 }
 .card.alarm-on {
   border-left-color: #e63946;
@@ -63,12 +64,14 @@ h1 {
 button {
   margin-top: 0.5rem;
   padding: 0.5rem 1rem;
+  max-width: 100%;
   background-color: #2a9d8f;
   color: white;
   border: none;
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.3s ease;
+  display: block;
 }
 button:hover {
   background-color: #23897a;
