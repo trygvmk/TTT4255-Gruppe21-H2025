@@ -1,110 +1,93 @@
-#include <WiFiNINA.h>
 #include <Arduino_LSM6DS3.h>
+#include <WiFiNINA.h>
+#include <ArduinoHttpClient.h>
 
-// 🔹 WiFi-info
-const char* ssid = "TESTNETT";
-const char* password = "Gjest2003";
+// WiFi network credentials
+char ssid[] = "Get-2G-DC87F1";       // your network SSID (name)
+char pass[] = "CopanoRickey100%BestUma";   // your network password
 
+// Node.js server address and port
+const char serverAddress[] = "192.168.0.155";  // Replace with your server IP
+int port = 3000;
 
-// 🔹 Node.js server info
-int HTTP_PORT = 3000;
-String HTTP_METHOD = "POST";      // or "POST"
-char HOST_NAME[] = "172.20.10.4"; // hostname of web server:
-String PATH_NAME = "/data";
+// HTTP client using WiFiNINA (use WiFiSSLClient for HTTPS)
+WiFiClient wifi;
+HttpClient client(wifi, serverAddress, port);
 
-WiFiClient client;
-
-bool lastSentAlarmOn = false;
-
-// 🔹 Alarm- og sensorinnstillinger
-const int alarmPin = 5;
-const float threshold = 0.2;       // Grense for "blunk"
-const unsigned long window = 2000; // 2 sekunder
+const float threshold = 0.2;        // example motion threshold
 unsigned long blinkTimes[10];
 int blinkCount = 0;
+const unsigned long window = 2000;        // time window in ms for blinks
 bool alarmOn = false;
+bool prevAlarmOn = false;
 
-String queryString = String("?alarmOn=") + String(alarmOn);
-
-void setup()
-{
+void setup() {
   Serial.begin(115200);
-  while (!Serial)
-    ;
+  while (!Serial);  // wait for serial monitor
 
-  if (!IMU.begin())
-  {
-    Serial.println("Feil: kunne ikke starte IMU!");
-    while (1)
-      ;
-  }
-
-  Serial.println("Kobler til WiFi...");
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED)
-  {
+  // Connect to WiFi network
+  Serial.print("Connecting to WiFi");
+  int status = WL_IDLE_STATUS;
+  while (status != WL_CONNECTED) {
+    status = WiFi.begin(ssid, pass);
     delay(500);
     Serial.print(".");
   }
-
-  Serial.println("\nWiFi tilkoblet!");
-  Serial.print("IP-adresse: ");
+  Serial.println("\nWiFi connected");
+  Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
-
-  // Ikke lenger webserver
 }
 
-void loop()
-{
-  // --- Les akselerasjon ---
+void loop() {
   float ax, ay, az;
-  if (IMU.accelerationAvailable())
-  {
+  if (IMU.accelerationAvailable()) {
     IMU.readAcceleration(ax, ay, az);
-    float magnitude = sqrt(ax * ax + ay * ay + az * az);
-
+    float magnitude = sqrt(ax*ax + ay*ay + az*az);
     static float lastMag = 1.0;
     float delta = fabs(magnitude - lastMag);
     lastMag = magnitude;
 
-    if (delta > threshold)
-    {
+    if (delta > threshold) {
+      // Register a motion (blink)
       unsigned long now = millis();
       blinkTimes[blinkCount % 10] = now;
       blinkCount++;
       Serial.println("💡 Registrert bevegelse (blunk)");
     }
 
-    // --- Fjern gamle blunk ---
+    // Count blinks within the time window
     unsigned long now = millis();
     int validCount = 0;
-    for (int i = 0; i < blinkCount && i < 10; i++)
-    {
-      if (now - blinkTimes[i] <= window)
-        validCount++;
+    for (int i = 0; i < blinkCount && i < 10; i++) {
+      if (now - blinkTimes[i] <= window) validCount++;
     }
 
-    // --- Sjekk om alarm skal slås på ---
-    if (!alarmOn && validCount >= 4)
-    {
+    // Turn alarm on if enough blinks detected
+    if (!alarmOn && validCount >= 4) {
       Serial.println("🚨 Fire blunk registrert – alarm på!");
       alarmOn = true;
     }
   }
 
-  // --- Sjekk og send alarmstatus hvis endret ---
-  if (lastSentAlarmOn != alarmOn)
-  {
-    if (client.connect(HOST_NAME, HTTP_PORT))
-    {
-      client.println("POST " + PATH_NAME + " HTTP/1.1");
-      client.println("Host: " + String(HOST_NAME));
-      client.println("Connection: close");
-      client.println(); // end HTTP header
+  // If alarm state changed, send HTTP POST with JSON
+  if (alarmOn != prevAlarmOn) {
+    // Build JSON string
+    String contentType = "application/json";
+    String postData = String("{\"alarmOn\":") + (alarmOn ? "true" : "false") + "}";
 
-      // send HTTP body
-      client.println(queryString);
-    }
+    // Send POST request to /data endpoint
+    client.post("/data", contentType, postData);
+
+    // Read and print response (optional)
+    int statusCode = client.responseStatusCode();
+    String response = client.responseBody();
+    Serial.print("Status code: ");
+    Serial.println(statusCode);
+    Serial.print("Response: ");
+    Serial.println(response);
+
+    prevAlarmOn = alarmOn;
   }
+
+  delay(100);
 }

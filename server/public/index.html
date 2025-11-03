@@ -1,72 +1,23 @@
 <!DOCTYPE html>
-<html lang="no">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Alarmstatus</title>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        background: #f8f9fa;
-        text-align: center;
-        padding: 40px;
-      }
-      h1 {
-        color: #007bff;
-        margin-bottom: 10px;
-      }
-      #statusBox {
-        display: inline-block;
-        background: white;
-        padding: 20px 40px;
-        border-radius: 15px;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-        margin-top: 30px;
-      }
-      .statusText {
-        font-size: 1.5rem;
-        font-weight: bold;
-        margin: 10px 0;
-      }
-      button {
-        padding: 12px 25px;
-        font-size: 16px;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        margin: 10px;
-        transition: background 0.3s;
-      }
-      #resetBtn {
-        background: #dc3545;
-        color: white;
-      }
-      #resetBtn:hover {
-        background: #b02a37;
-      }
-    </style>
-    <script>
-      async function oppdater() {
-        const res = await fetch("/data");
-        const status = await res.text();
-        const sElem = document.getElementById("status");
-        sElem.innerText = status;
-        if (status.includes("PÅ")) sElem.style.color = "red";
-        else sElem.style.color = "green";
-      }
-      async function resetAlarm() {
-        await fetch("/reset");
-        await oppdater();
-        alert("Alarmen er resatt");
-      }
-      setInterval(oppdater, 1000);
-    </script>
+    <title>Patient Monitoring Dashboard</title>
+    <link rel="stylesheet" href="style.css" />
   </head>
-  <body onload="oppdater()">
-    <h1>Blunkdeteksjon</h1>
-    <div id="statusBox">
-      <p class="statusText">Alarmstatus: <span id="status">Laster...</span></p>
-      <button id="resetBtn" onclick="resetAlarm()">Reset alarm</button>
+  <body>
+    <div class="header">
+      <h1>Patient Monitoring Dashboard</h1>
+      <div class="last-update" id="lastUpdate">Last update: --</div>
     </div>
+    <div class="grid" id="subjects"></div>
+
+    <audio
+      id="alertSound"
+      src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
+    ></audio>
+
+    <script src="script.js"></script>
   </body>
 </html>
