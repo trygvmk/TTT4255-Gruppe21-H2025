@@ -3,11 +3,11 @@
 #include <ArduinoHttpClient.h>
 
 // WiFi network credentials
-char ssid[] = "network Name"; // your network SSID (name)
-char pass[] = "Password123";  // your network password
+char ssid[] = "Network name"; // your network SSID (name)
+char pass[] = "Password";     // your network password
 
 // Node.js server address and port
-const char serverAddress[] = "192.168.0.155"; // Replace with your server IP
+const char serverAddress[] = "172.20.10.4"; // Replace with your server IP
 int port = 3000;
 
 WiFiClient wifi;
@@ -21,7 +21,7 @@ bool alarmOn = false;
 bool prevAlarmOn = false;
 
 unsigned long lastFetch = 0;
-const unsigned long fetchIntervalAlarm = 5 * 1000; // 5 minutes when alarm is active
+const unsigned long fetchIntervalAlarm = 5 * 1000;
 
 void setup()
 {
@@ -51,7 +51,6 @@ void setup()
 
 void loop()
 {
-  // --- IMU reading (same as before) ---
   float ax, ay, az;
   if (IMU.accelerationAvailable())
   {

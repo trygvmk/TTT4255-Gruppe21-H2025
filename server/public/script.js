@@ -1,17 +1,17 @@
 /* script.js */
 const subjects = [
-  { id: 1, name: "Real-time test", age: 34, gender: "Female", room: "203A" },
-  { id: 2, name: "Fake person 2", age: 28, gender: "Male", room: "105B" },
+  { id: 1, name: "Real-time test", age: 73, gender: "Female", room: "203A" },
+  { id: 2, name: "Fake person 1", age: 82, gender: "Male", room: "105B" },
   {
     id: 3,
-    name: "Fake person 3",
-    age: 41,
-    gender: "Non-binary",
+    name: "Fake person 2",
+    age: 92,
+    gender: "Female",
     room: "210C",
   },
-  { id: 4, name: "Fake person 4", age: 52, gender: "Male", room: "112A" },
-  { id: 5, name: "Fake person 5", age: 37, gender: "Female", room: "215B" },
-  { id: 6, name: "Fake person 6", age: 45, gender: "Male", room: "107C" },
+  { id: 4, name: "Fake person 3", age: 61, gender: "Male", room: "112A" },
+  { id: 5, name: "Fake person 4", age: 83, gender: "Female", room: "215B" },
+  { id: 6, name: "Fake person 5", age: 78, gender: "Male", room: "107C" },
 ];
 
 let lastAlarmState = false;
