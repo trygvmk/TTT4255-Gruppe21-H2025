@@ -6,19 +6,17 @@ const app = express();
 let latestData = { alarmOn: false };
 
 app.use(bodyParser.json());
-app.use(express.static("public")); // Serve your HTML from /public
+app.use(express.static("public"));
 
 // Endpoint for Arduino to send data (POST)
 app.post("/data", (req, res) => {
   latestData = req.body || { alarmOn: false };
   console.log("Received /data POST:", latestData);
-  // respond with acknowledgement
   res.json({ ok: true, received: latestData });
 });
 
 // Endpoint for website to fetch latest data (GET)
 app.get("/data", (req, res) => {
-  // always return JSON with alarmOn boolean
   const out = { alarmOn: !!latestData.alarmOn };
   res.json(out);
 });
